@@ -1,3 +1,4 @@
+local db_version = 1180
 -- Keywords to detect LFG/LFM
 local keywords = {
   "lfg", "lfm", "lf", "lf1m", "lf2m", "lf3m", "lf4m"
@@ -48,7 +49,7 @@ function UpdateMainFrame()
         contentFrame.rows = {}
     end
     local yOffset = -10
-    local rowHeight = 20
+    local rowHeight = 30
     local currentY = -10
     local rowCount = 0
     contentFrame:SetWidth(640)  -- ensure width is consistent with your rows
@@ -146,12 +147,13 @@ function senderAlreadyPosted(sender)
     return nil
 end
 
-function CreateOrUpdatePosting(sender, instance, msg, channelNumber, keyword)
+function CreateOrUpdatePosting(sender, instance, formatted_instance, msg, channelNumber, keyword)
     local index = senderAlreadyPosted(sender)
     CleanupOldEntries()
     if index then -- if an entry has been found, update this entry
         -- Update existing entry
         LFGHelperPostingDB[index].instance = instance
+        LFGHelperPostingDB[index].formatted_instance = formatted_instance
         LFGHelperPostingDB[index].text = msg
         LFGHelperPostingDB[index].timestamp = time()
     else
@@ -159,6 +161,7 @@ function CreateOrUpdatePosting(sender, instance, msg, channelNumber, keyword)
         table.insert(LFGHelperPostingDB, {
             sender = sender,
             instance = instance,
+            formatted_instance = formatted_instance,
             text = msg,
             lookingfor = keyword,
             timestamp = time()
@@ -235,6 +238,9 @@ function LoadLFGHelperOptions()
     local frame = LFGHelperOptionFrame
     local cleanupMinutes = LFGHelperSettings.cleanupMinutes or 15
 
+    -- =========================
+    -- Cleanup Slider
+    -- =========================
     if not frame.cleanupSlider then
         local slider = CreateFrame("Slider", "LFGHelperCleanupSlider", frame, "OptionsSliderTemplate")
         slider:SetWidth(200)
@@ -255,7 +261,7 @@ function LoadLFGHelperOptions()
         slider:SetScript("OnValueChanged", function()
             local value = math.floor(slider:GetValue())
             valueText:SetText(value .. " minutes")
-            LFGHelperSettings.cleanupMinutes = value  -- Save the value in the variable
+            LFGHelperSettings.cleanupMinutes = value
         end)
         frame.cleanupSlider = slider
         frame.cleanupSliderValueText = valueText
@@ -263,7 +269,33 @@ function LoadLFGHelperOptions()
         frame.cleanupSlider:SetValue(cleanupMinutes)
         frame.cleanupSliderValueText:SetText(cleanupMinutes .. " minutes")
     end
+
+    -- =========================
+    -- Continue Scanning Checkbox
+    -- =========================
+    if not frame.continueScanCheckbox then
+        local check = CreateFrame("CheckButton", "LFGHelperContinueScanCheck", frame, "UICheckButtonTemplate")
+        check:SetPoint("TOPLEFT", frame.cleanupSlider, "BOTTOMLEFT", 0, -40)
+
+        -- Create label manually
+        local label = check:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", check, "RIGHT", 5, 0)
+        label:SetText("Continue scanning while window is closed")
+
+        -- initialize from saved variable
+        check:SetChecked(LFGHelperSettings.continueScanning or false)
+
+        -- save on click
+        check:SetScript("OnClick", function()
+        LFGHelperSettings.continueScanning = this:GetChecked() and true or false
+        end)
+
+        frame.continueScanCheckbox = check
+    else
+        frame.continueScanCheckbox:SetChecked(LFGHelperSettings.continueScanning or false)
+    end
 end
+
 
 function CreateLFGHelperMinimapButton()
     local minimapButton = CreateFrame("Button", "LFGHelperMinimapButton", Minimap)
@@ -317,32 +349,37 @@ end
 
 -- On Addon Load
 function LFGHelper_OnLoad()
-    if not LFGHelperInstancesDB then
+    if not LFGHelperInstancesDB or not LFGHelperInstancesDBVersion or LFGHelperInstancesDBVersion < db_version then
+        LFGHelperInstancesDBVersion = db_version
         LFGHelperInstancesDB = {
             { instanceName = "Ragefire Chasm", type = "dungeon", acronym = {"rfc", "ragefire"}, show = false },
             { instanceName = "The Deadmines", type = "dungeon", acronym = {"deadmines", "deadmine"}, show = false },
             { instanceName = "Wailing Caverns", type = "dungeon", acronym = {"wc", "wailing"}, show = false },
-            { instanceName = "The Stockade", type = "dungeon", acronym = {"stockade"}, show = false },
             { instanceName = "Shadowfang Keep", type = "dungeon", acronym = {"sfk"}, show = false },
             { instanceName = "Blackfathom Deeps", type = "dungeon", acronym = {"bfd"}, show = false },
-            { instanceName = "Scarlet Monastery Graveyard", type = "dungeon", acronym = {"sm grave", "smg", "graveyard"}, show = false },
-            { instanceName = "Scarlet Monastery Library", type = "dungeon", acronym = {"sm lib", "library"}, show = false },
+            { instanceName = "The Stockade", type = "dungeon", acronym = {"stockade"}, show = false },
+            { instanceName = "Dragonmaw Retreat", type = "dungeon", acronym = {"dragonmaw", "retreat"}, show = false },
             { instanceName = "Gnomeregan", type = "dungeon", acronym = {"gnome", "gnomeregan"}, show = false },
             { instanceName = "Razorfen Kraul", type = "dungeon", acronym = {"rfk", "kraul"}, show = false },
+            { instanceName = "Scarlet Monastery Graveyard", type = "dungeon", acronym = {"sm grave", "smg", "graveyard"}, show = false },
+            { instanceName = "Scarlet Monastery Library", type = "dungeon", acronym = {"sm lib", "library"}, show = false },
+            { instanceName = "Stormwrought Castle", type = "dungeon", acronym = {"castle", "sr castle"}, show = false },
             { instanceName = "The Crescent Grove", type = "dungeon", acronym = {"crescent", "cg", "grove"}, show = false },
             { instanceName = "Scarlet Monastery Armory", type = "dungeon", acronym = {"sm arm", "armory"}, show = false },
-            { instanceName = "Scarlet Monastery Cathedral", type = "dungeon", acronym = {"sm cath", "cathedral", "cath"}, show = false },
             { instanceName = "Razorfen Down", type = "dungeon", acronym = {"rfd"}, show = false },
+            { instanceName = "Stormwrought Descent", type = "dungeon", acronym = {"descent", "sr descent"}, show = false },
+            { instanceName = "Scarlet Monastery Cathedral", type = "dungeon", acronym = {"sm cath", "cathedral", "cath"}, show = false },
             { instanceName = "Uldaman", type = "dungeon", acronym = {"uld", "uldaman"}, show = false },
-            { instanceName = "Gilneas City", type = "dungeon", acronym = {"gc", "gilneas"}, show = false },
             { instanceName = "Zul'Farrak", type = "dungeon", acronym = {"zf", "farrak"}, show = false },
+            { instanceName = "Gilneas City", type = "dungeon", acronym = {"gc", "gilneas"}, show = false },
             { instanceName = "Maraudon", type = "dungeon", acronym = {"maraudon", "mar"}, show = false },
             { instanceName = "Maraudon Princess", type = "dungeon", acronym = {"princess"}, show = false },
             { instanceName = "Temple of Atal'Hakkar", type = "dungeon", acronym = {"sunken", "temple", "atal"}, show = false },
-            { instanceName = "Hateforge Quarry", type = "dungeon", acronym = {"hq", "hateforge", "quarry"}, show = false },
             { instanceName = "Blackrock Depths Arena", type = "dungeon", acronym = {"arena"}, show = false },
+            { instanceName = "Hateforge Quarry", type = "dungeon", acronym = {"hq", "hateforge", "quarry"}, show = false },
             { instanceName = "Blackrock Depths", type = "dungeon", acronym = {"brd"}, show = false },
             { instanceName = "Blackrock Depths Emperor", type = "dungeon", acronym = {"emperor", "emp"}, show = false },
+            { instanceName = "Lower Blackrock Spire", type = "dungeon", acronym = {"lbrs"}, show = false },
             { instanceName = "Dire Maul", type = "dungeon", acronym = {"dm", "dmw", "dme", "dmn"}, show = false },
             { instanceName = "Scholomance", type = "dungeon", acronym = {"scholo", "scholomance"}, show = false },
             { instanceName = "Stratholme", type = "dungeon", acronym = {"strat"}, show = false },
@@ -350,9 +387,8 @@ function LFGHelper_OnLoad()
             { instanceName = "Black Morass", type = "dungeon", acronym = {"morass", "black", "bm"}, show = false },
             { instanceName = "Stormwind Vault", type = "dungeon", acronym = {"vault"}, show = false },
             { instanceName = "Upper Blackrock Spire", type = "dungeon", acronym = {"ubrs"}, show = false },
-            { instanceName = "Lower Blackrock Spire", type = "dungeon", acronym = {"lbrs"}, show = false },
             { instanceName = "Molten Core", type = "raid", acronym = {"mc", "molten"}, show = false },
-            { instanceName = "BlackWing Lair", type = "raid", acronym = {"bwl"}, show = false },
+            { instanceName = "Blackwing Lair", type = "raid", acronym = {"bwl"}, show = false },
             { instanceName = "Emerald Sanctum", type = "raid", acronym = {"es", "emerald", "sanctum"}, show = false },
             { instanceName = "Karazhan", type = "raid", acronym = {"kara"}, show = false },
             { instanceName = "Onyxia", type = "raid", acronym = {"ony", "onyxia"}, show = false },
@@ -374,6 +410,9 @@ function LFGHelper_OnLoad()
     -- Default fallback in case cleanupMinutes isn't set
     if not LFGHelperSettings.cleanupMinutes then
         LFGHelperSettings.cleanupMinutes = 15
+    end
+    if LFGHelperSettings.continueScanning == nil then
+        LFGHelperSettings.continueScanning = false
     end
 end
 -- Create main event frame
@@ -416,7 +455,7 @@ f:SetScript("OnEvent", function()
         end
     end
 
-  elseif event == "CHAT_MSG_CHANNEL" and LFGHelperFrame:IsVisible() then
+  elseif event == "CHAT_MSG_CHANNEL" and (LFGHelperFrame:IsVisible() or LFGHelperSettings.continueScanning) then
     local msg = arg1
     local sender = arg2
     local language = arg3
@@ -430,8 +469,10 @@ f:SetScript("OnEvent", function()
             if dungeonName ~= nil then
               local sanitizedName = string.gsub(dungeonName, "%s+", "_") 
               if LFGHelperVisibleInstances[sanitizedName] then
-                CreateOrUpdatePosting(sender, sanitizedName, msg, channelNumber, keyword)
-                UpdateMainFrame()
+                CreateOrUpdatePosting(sender, dungeonName, sanitizedName, msg, channelNumber, keyword)
+                if LFGHelperFrame:IsVisible() then
+                    UpdateMainFrame()
+                end
               end
             end
           end
