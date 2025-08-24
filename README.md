@@ -11,6 +11,9 @@ Download the repository and put it in your /Interface/AddOns/ directory.<br> The
 <h2>Feedback/Suggestions</h2>
 Don't be shy to contact me for suggestions, feedbacks.
 
+<h2>Quick fix</h2>
+If something is not working correctly, delete the files LFGHelper.lua and LFGHelper.lua.bak inside your WoWDirectory/WTF/Account/YourAccount/SavedVariables folder.<br>If it still doesn't work, submit the bug.
+
 <h2>Screenshots</h2>
 <img src=./images/mainframe.png><br>
 <img src=./images/filters.png>

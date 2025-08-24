@@ -157,7 +157,7 @@
                 this:StopMovingOrSizing()
             </OnMouseUp>
             <OnShow>
-                CreateInstanceCheckboxes()
+                RefreshInstanceCheckboxes()
             </OnShow>
         </Scripts>
         <Layers>

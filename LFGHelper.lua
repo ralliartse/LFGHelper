@@ -1,8 +1,12 @@
 local db_version = 1180
+
 -- Keywords to detect LFG/LFM
 local keywords = {
-  "lfg", "lfm", "lf", "lf1m", "lf2m", "lf3m", "lf4m"
+  "lfg", "lfm", "lf", "lf1m", "lf2m", "lf3m", "lf4m", "lf5m", "lf6m", "lf7m", "lf8m", "lf9m", "lf10m"
 }
+
+-- Initialize Instance Checkboxes
+local instanceCheckboxes = {}
 
 local function extractDungeonName(text)
   text = string.lower(text)  -- Ensure case-insensitive
@@ -27,6 +31,13 @@ local function extractDungeonName(text)
   return nil
 end
 
+local function SanitizeInstanceName(name)
+    -- normalize case and replace multiple spaces with one underscore
+    name = string.lower(name)
+    name = string.gsub(name, "%s+", "_")
+    return name
+end
+
 local function CleanupOldEntries()
     local threshold = (LFGHelperSettings.cleanupMinutes or 15) * 60  -- fallback to 15 minutes if empty
     local count = table.getn(LFGHelperPostingDB)
@@ -41,6 +52,8 @@ end
 
 function UpdateMainFrame()
     local contentFrame = LFGHelperScrollContent
+
+    -- Hide old rows
     if contentFrame.rows then
         for _, row in ipairs(contentFrame.rows) do
             row:Hide()
@@ -48,26 +61,36 @@ function UpdateMainFrame()
     else
         contentFrame.rows = {}
     end
+
+    -- Rebuild visible instances mapping
+    for _, data in ipairs(LFGHelperInstancesDB) do
+        local sanitizedName = SanitizeInstanceName(data.instanceName)
+        LFGHelperVisibleInstances[sanitizedName] = (data.show == 1 or data.show == true)
+    end
+
     local yOffset = -10
     local rowHeight = 30
     local currentY = -10
     local rowCount = 0
-    contentFrame:SetWidth(640)  -- ensure width is consistent with your rows
+    contentFrame:SetWidth(640)
+
+    -- Loop through visible instances
     for instanceName, isVisible in pairs(LFGHelperVisibleInstances) do
         if isVisible then
             for _, postingData in ipairs(LFGHelperPostingDB) do
-                if instanceName == postingData.instance then
+                local sanitizedPostingInstance = SanitizeInstanceName(postingData.instance)
+                if instanceName == sanitizedPostingInstance then
+                    -- Create row frame
                     local rowFrame = CreateFrame("Frame", nil, contentFrame)
                     rowFrame:SetWidth(590)
                     rowFrame:SetHeight(rowHeight)
                     rowFrame:SetPoint("TOPLEFT", 0, currentY)
                     currentY = currentY - rowHeight - 5
                     rowCount = rowCount + 1
-                    local senderWidth = 60
-                    local instanceWidth = 100
-                    local textWidth = 340
-                    local timeWidth = 60
-                    -- Button
+
+                    local senderWidth, instanceWidth, textWidth, timeWidth = 60, 100, 340, 60
+
+                    -- Button (Invite or Whisper)
                     local button = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
                     button:SetWidth(60)
                     button:SetHeight(rowHeight)
@@ -76,48 +99,42 @@ function UpdateMainFrame()
                     local lowerText = string.lower(postingData.text or "")
                     if string.find(lowerText, "lfg") then
                         button:SetText("INVITE")
-                        button:SetScript("OnClick", function(self, button)
-                          if senderName then
-                              print("Sending invite to: " .. senderName)
-                              InviteByName(senderName)
-                          else
-                              print("Error: unable to retrieve the name")
-                          end
-                      end)
+                        button:SetScript("OnClick", function()
+                            if senderName then
+                                InviteByName(senderName)
+                            end
+                        end)
                     else
                         button:SetText("WHISPER")
-                        button:SetScript("OnClick", function(self, button)
-                          if senderName then
-                              print("Opening whisper to: " .. senderName)
-                              ChatFrame_OpenChat("/w " .. senderName .. " ")
-                          else
-                              print("Error: unable to retrieve the name")
-                          end
-                      end)
+                        button:SetScript("OnClick", function()
+                            if senderName then
+                                ChatFrame_OpenChat("/w " .. senderName .. " ")
+                            end
+                        end)
                     end
 
-                    -- Sender Column
+                    -- Sender column
                     local senderFont = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                    senderFont:SetText(postingData.sender)
+                    senderFont:SetText(senderName)
                     senderFont:SetWidth(senderWidth)
                     senderFont:SetJustifyH("LEFT")
                     senderFont:SetPoint("LEFT", button, "RIGHT", 10, 0)
 
-                    -- Instance Column
+                    -- Instance column
                     local instanceFont = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                     instanceFont:SetText(postingData.instance)
                     instanceFont:SetWidth(instanceWidth)
                     instanceFont:SetJustifyH("LEFT")
                     instanceFont:SetPoint("LEFT", senderFont, "RIGHT", 10, 0)
 
-                    -- Message Column
+                    -- Message column
                     local messageFont = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                     messageFont:SetText(postingData.text)
                     messageFont:SetWidth(textWidth)
                     messageFont:SetJustifyH("LEFT")
                     messageFont:SetPoint("LEFT", instanceFont, "RIGHT", 10, 0)
 
-                    -- Timelapse Column
+                    -- Time column
                     local timeFont = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                     local timelapse = math.floor((time() - postingData.timestamp) / 60)
                     timeFont:SetText(timelapse .. " mins ago")
@@ -130,11 +147,13 @@ function UpdateMainFrame()
             end
         end
     end
+
     if rowCount == 0 then
         contentFrame:SetHeight(100)
     else
         contentFrame:SetHeight(math.abs(currentY) + 20)
     end
+
     LFGHelperScroll:UpdateScrollChildRect()
 end
 
@@ -147,13 +166,13 @@ function senderAlreadyPosted(sender)
     return nil
 end
 
-function CreateOrUpdatePosting(sender, instance, formatted_instance, msg, channelNumber, keyword)
+function CreateOrUpdatePosting(sender, instance, sanitized_instance, msg, channelNumber, keyword)
     local index = senderAlreadyPosted(sender)
     CleanupOldEntries()
     if index then -- if an entry has been found, update this entry
         -- Update existing entry
         LFGHelperPostingDB[index].instance = instance
-        LFGHelperPostingDB[index].formatted_instance = formatted_instance
+        LFGHelperPostingDB[index].sanitized_instance = sanitized_instance
         LFGHelperPostingDB[index].text = msg
         LFGHelperPostingDB[index].timestamp = time()
     else
@@ -161,7 +180,7 @@ function CreateOrUpdatePosting(sender, instance, formatted_instance, msg, channe
         table.insert(LFGHelperPostingDB, {
             sender = sender,
             instance = instance,
-            formatted_instance = formatted_instance,
+            sanitized_instance = sanitized_instance,
             text = msg,
             lookingfor = keyword,
             timestamp = time()
@@ -170,29 +189,45 @@ function CreateOrUpdatePosting(sender, instance, formatted_instance, msg, channe
 end
 
 function InitializeVisibleInstance()
+  wipe(LFGHelperVisibleInstances) -- reset table
+
   for _, data in ipairs(LFGHelperInstancesDB) do
     if data.show then
-      local sanitizedName = string.gsub(data.instanceName, "%s+", "_")  -- Replace spaces with underscores
+      local sanitizedName = SanitizeInstanceName(data.instanceName)
       LFGHelperVisibleInstances[sanitizedName] = true
     end
   end
 end
 
+function RefreshInstanceCheckboxes()
+    for _, data in ipairs(LFGHelperInstancesDB) do
+        local sanitizedName = SanitizeInstanceName(data.instanceName)
+        local checkbox = instanceCheckboxes[sanitizedName]
+        if checkbox then
+            checkbox:SetChecked(data.show)
+            if data.show then
+                LFGHelperVisibleInstances[sanitizedName] = true
+            else
+                LFGHelperVisibleInstances[sanitizedName] = nil
+            end
+        end
+    end
+end
+
+
 function CreateInstanceCheckboxes()
     local rowsPerColumnRaids = 3
     local rowsPerColumnDungeons = 13
+    local xStart, xSpacing = 30, 180
+    local yOffset = -20
+
     local function CreateSection(title, instanceType, rowsPerColumn, yStart)
         -- Title Label
         local titleFont = LFGHelperFilterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         titleFont:SetText(title)
-        -- titleFont:SetPoint("TOPLEFT", 20, yStart)
         titleFont:SetPoint("TOPLEFT", LFGHelperFilterFrame, "TOPLEFT", 25, yStart)
-        local row = 0
-        local column = 0
-        local yOffset = -20
-        local xStart = 30
-        local xSpacing = 180
 
+        local row, column = 0, 0
         local currentY = yStart - 20
 
         for _, data in ipairs(LFGHelperInstancesDB) do
@@ -201,33 +236,37 @@ function CreateInstanceCheckboxes()
                     row = 0
                     column = column + 1
                 end
-                local sanitizedName = string.gsub(data.instanceName, "%s+", "_")  -- Replace spaces with underscores
-                local checkbox = CreateFrame("CheckButton", "LFGInstanceCheckbox_" .. sanitizedName, LFGHelperFilterFrame, "UICheckButtonTemplate")
-                checkbox:SetWidth(20)
-                checkbox:SetHeight(20)
-                checkbox.dataReference = data
-                checkbox:SetChecked(data.show)
-                getglobal(checkbox:GetName().."Text"):SetText(data.instanceName)
-                checkbox:SetPoint("TOPLEFT", xStart + (column * xSpacing), currentY + (row * yOffset))
-                -- Set initial state
-                checkbox:SetChecked(data.show)
-                -- OnClick to update DB
-                checkbox:SetScript("OnClick", function()
-                  local checked = this:GetChecked()
-                  this.dataReference.show = checked
-                  if checked then
-                    LFGHelperVisibleInstances[sanitizedName] = true
-                  else
-                    LFGHelperVisibleInstances[sanitizedName] = nil
-                  end
-                  UpdateMainFrame()
-                end)
+
+                local sanitizedName = SanitizeInstanceName(data.instanceName)
+                LFGHelperVisibleInstances[sanitizedName] = (data.show == 1 or data.show == true)
+
+                -- Only create if not already created
+                if not instanceCheckboxes[sanitizedName] then
+                    local checkbox = CreateFrame("CheckButton", "LFGInstanceCheckbox_"..sanitizedName, LFGHelperFilterFrame, "UICheckButtonTemplate")
+                    checkbox:SetWidth(20)
+                    checkbox:SetHeight(20)
+                    checkbox.dataReference = data
+                    getglobal(checkbox:GetName().."Text"):SetText(data.instanceName)
+                    checkbox:SetPoint("TOPLEFT", xStart + (column*xSpacing), currentY + (row*yOffset))
+                    checkbox:SetChecked(data.show == 1 or data.show == true)
+
+                    checkbox:SetScript("OnClick", function()
+                        local checked = this:GetChecked()
+                        LFGHelperVisibleInstances[sanitizedName] = checked
+                        this.dataReference.show = checked and 1 or 0
+                        UpdateMainFrame()
+                    end)
+
+                    instanceCheckboxes[sanitizedName] = checkbox
+                end
+
                 row = row + 1
             end
         end
-        -- Return final Y position for next section
+
         return currentY + (row * yOffset) - 40
     end
+
     local nextSectionY = -40
     nextSectionY = CreateSection("Raids", "raid", rowsPerColumnRaids, nextSectionY)
     CreateSection("Dungeons", "dungeon", rowsPerColumnDungeons, nextSectionY)
@@ -387,7 +426,7 @@ function LFGHelper_OnLoad()
             { instanceName = "Black Morass", type = "dungeon", acronym = {"morass", "black", "bm"}, show = false },
             { instanceName = "Stormwind Vault", type = "dungeon", acronym = {"vault"}, show = false },
             { instanceName = "Upper Blackrock Spire", type = "dungeon", acronym = {"ubrs"}, show = false },
-            { instanceName = "Molten Core", type = "raid", acronym = {"mc", "molten"}, show = false },
+            { instanceName = "Molten Core", type = "raid", acronym = {"mc", "molten", "molten core"}, show = false },
             { instanceName = "Blackwing Lair", type = "raid", acronym = {"bwl"}, show = false },
             { instanceName = "Emerald Sanctum", type = "raid", acronym = {"es", "emerald", "sanctum"}, show = false },
             { instanceName = "Karazhan", type = "raid", acronym = {"kara"}, show = false },
@@ -425,6 +464,7 @@ f:SetScript("OnEvent", function()
     LFGHelper_OnLoad()
     InitializeVisibleInstance()
     CreateLFGHelperMinimapButton()
+    CreateInstanceCheckboxes()
     -- Register slash command once UI is loaded
     SLASH_LFGHELPER1 = "/lfghelper"
     SlashCmdList["LFGHELPER"] = function(msg)
@@ -466,10 +506,10 @@ f:SetScript("OnEvent", function()
         for i = 1, table.getn(keywords) do
           if string.find(lowerMsg, keywords[i]) then
             local dungeonName = extractDungeonName(lowerMsg)
-            if dungeonName ~= nil then
-              local sanitizedName = string.gsub(dungeonName, "%s+", "_") 
+            if dungeonName then
+              local sanitizedName = SanitizeInstanceName(dungeonName)
               if LFGHelperVisibleInstances[sanitizedName] then
-                CreateOrUpdatePosting(sender, dungeonName, sanitizedName, msg, channelNumber, keyword)
+                CreateOrUpdatePosting(sender, dungeonName, sanitizedName, msg, channelNumber, keywords[i])
                 if LFGHelperFrame:IsVisible() then
                     UpdateMainFrame()
                 end
